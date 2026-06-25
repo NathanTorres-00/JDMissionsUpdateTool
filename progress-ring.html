@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fundraising Progress Ring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  /* ===== Theme (tweak these to restyle without touching the logic) ===== */
+  :root {
+    --bg: transparent;          /* page/iframe background; set to #fff to match Figma exactly */
+    --blue: #2E80C2;            /* remaining (track) */
+    --green: #7CB342;           /* raised (progress) */
+    --gap: #ffffff;             /* segment divider colour — only visible if --bg is solid */
+    --text: #111827;            /* amount + labels */
+    --font: 'Geist', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    font-family: var(--font);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  #widget {
+    width: 100%;
+    max-width: 520px;
+    min-width: 250px;
+    padding: 16px;
+  }
+  svg { width: 100%; height: auto; display: block; }
+  .seg { transition: none; }                 /* arcs are redrawn per-frame, no CSS transition */
+  .mlabel { font-weight: 700; font-size: 15px; fill: #000; }
+  .ctitle { font-weight: 700; font-size: 15px; fill: #000; }
+  .camount { font-weight: 700; font-size: 30px; fill: var(--text); }
+  #fallback {
+    display: none;
+    text-align: center;
+    color: var(--text);
+    font-weight: 700;
+    font-size: 16px;
+    padding: 40px 16px;
+  }
+  #fallback.show { display: block; }
+  #ring-wrap.hide { display: none; }
+</style>
+</head>
+<body>
+  <main id="widget">
+    <div id="ring-wrap">
+      <svg id="ring-svg" viewBox="-50 0 560 460" role="img"
+           aria-label="Fundraising progress loading">
+        <g id="ring"></g>
+        <g id="labels"></g>
+        <g id="center">
+          <text class="ctitle" x="230" y="205" text-anchor="middle">Together we've</text>
+          <text class="ctitle" x="230" y="224" text-anchor="middle">raised</text>
+          <text id="amount" class="camount" x="230" y="260" text-anchor="middle">$0.00</text>
+        </g>
+      </svg>
+    </div>
+    <div id="fallback">Unable to load fundraising data</div>
+  </main>
+
+<script>
+/* ============================================================
+ * CONFIG — edit these values as needed.
+ * The live amount comes from cell B2 of the Google Sheet;
+ * the goal comes from A2 (falls back to GOAL_FALLBACK).
+ * ============================================================ */
+const CONFIG = {
+  API_KEY: "AIzaSyCKStQUULr43JTBg9m4iZc1Q10kPlZeBfo",
+  SHEET_ID: "1cytKQII53YLwpFn1g_KlTAyG9k9_ohxZNH2IObRHNhQ",
+  SHEET_RANGE: "A2:B2",                                  // A2 = goal, B2 = current
+  GOAL_FALLBACK: 1200000,
+  MILESTONES: [240000, 480000, 600000, 720000, 960000, 1200000], // segment marks + labels
+  REFRESH_INTERVAL: 300000,                              // 5 minutes
+  ANIMATE_MS: 1400
+};
+
+/* ===== Ring geometry (in viewBox units) ===== */
+const CX = 230, CY = 230;
+const RADIUS = 142;       // centreline radius of the ring stroke
+const STROKE = 32;        // ring thickness
+const LABEL_R = 178;      // radius for the milestone labels
+const GAP_DEG = 2.4;      // half-width of the white divider at each milestone
+
+const ringEl   = document.getElementById('ring');
+const labelsEl  = document.getElementById('labels');
+const amountEl  = document.getElementById('amount');
+const svgEl     = document.getElementById('ring-svg');
+const wrapEl    = document.getElementById('ring-wrap');
+const fallbackEl = document.getElementById('fallback');
+
+const fmtAmount = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2
+});
+const fmtLabel = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', maximumFractionDigits: 0
+});
+
+/* clockwise from 12 o'clock */
+function polar(r, deg) {
+  const a = deg * Math.PI / 180;
+  return [CX + r * Math.sin(a), CY - r * Math.cos(a)];
+}
+function arc(r, startDeg, endDeg) {
+  const [x1, y1] = polar(r, startDeg);
+  const [x2, y2] = polar(r, endDeg);
+  const large = (endDeg - startDeg) > 180 ? 1 : 0;
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+function segPath(r, a, b, color) {
+  return `<path class="seg" d="${arc(r, a, b)}" fill="none" stroke="${color}" `
+       + `stroke-width="${STROKE}" stroke-linecap="butt" />`;
+}
+
+/* sorted milestones (ascending) drive equidistant segments + labels */
+const MS = [...CONFIG.MILESTONES].sort((a, b) => a - b);
+const SEG_DEG = 360 / MS.length;          // every milestone occupies an equal arc
+
+/* equal-size segment boundaries: [0,SEG],[SEG,2*SEG]... */
+function boundaries() {
+  const segs = [];
+  for (let i = 0; i < MS.length; i++) segs.push([i * SEG_DEG, (i + 1) * SEG_DEG]);
+  return segs;
+}
+
+const SEGMENTS = boundaries();
+
+/* piecewise-linear: dollars -> angle, interpolated within the current milestone band,
+   so the green tip always lines up correctly with the evenly-spaced labels */
+function progressAngle(amount) {
+  if (amount <= 0) return 0;
+  let prev = 0;
+  for (let i = 0; i < MS.length; i++) {
+    const m = MS[i];
+    if (amount < m) return (i + (amount - prev) / (m - prev)) * SEG_DEG;
+    prev = m;
+  }
+  return 360;
+}
+
+/* draw the ring at a given progress angle (0..360): green up to it, blue after, gaps between */
+function renderRing(progressAngle) {
+  let html = '';
+  for (const [a, b] of SEGMENTS) {
+    const s = a + GAP_DEG;
+    const e = b - GAP_DEG;
+    if (e <= s) continue;
+    const c = Math.max(s, Math.min(e, progressAngle));
+    if (c > s + 0.01) html += segPath(RADIUS, s, c, 'var(--green)');
+    if (c < e - 0.01) html += segPath(RADIUS, c, e, 'var(--blue)');
+  }
+  ringEl.innerHTML = html;
+}
+
+function renderLabels() {
+  let html = '';
+  MS.forEach((v, i) => {
+    const deg = (i + 1) * SEG_DEG;          // evenly spaced around the circle
+    const [x, y] = polar(LABEL_R, deg);
+    const sin = Math.sin(deg * Math.PI / 180);
+    let anchor = 'middle';
+    if (sin > 0.2) anchor = 'start';
+    else if (sin < -0.2) anchor = 'end';
+    html += `<text class="mlabel" x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" `
+          + `text-anchor="${anchor}">${fmtLabel.format(v)}</text>`;
+  });
+  labelsEl.innerHTML = html;
+}
+
+/* ===== Animation ===== */
+let shownAmount = 0;       // amount currently displayed
+let currentGoal = CONFIG.GOAL_FALLBACK;
+let rafId = null;
+
+function setAmount(v) { amountEl.textContent = fmtAmount.format(v); }
+function setAria(amount, goal) {
+  const pct = Math.round((amount / goal) * 100);
+  svgEl.setAttribute('aria-label',
+    `Fundraising progress: ${pct}% of ${fmtLabel.format(goal)} raised`);
+}
+
+function animateTo(target, goal) {
+  if (rafId) cancelAnimationFrame(rafId);
+  const start = shownAmount;
+  const t0 = performance.now();
+  function frame(now) {
+    const p = Math.min((now - t0) / CONFIG.ANIMATE_MS, 1);
+    const eased = 1 - Math.pow(1 - p, 3);           // easeOutCubic
+    const val = start + (target - start) * eased;
+    renderRing(progressAngle(val));
+    setAmount(val);
+    if (p < 1) {
+      rafId = requestAnimationFrame(frame);
+    } else {
+      shownAmount = target;
+      rafId = null;
+    }
+  }
+  setAria(target, goal);
+  rafId = requestAnimationFrame(frame);
+}
+
+/* ===== Data ===== */
+function endpoint() {
+  return `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.SHEET_ID}`
+       + `/values/${CONFIG.SHEET_RANGE}?key=${CONFIG.API_KEY}`;
+}
+function toNumber(x) {
+  if (x == null) return NaN;
+  return parseFloat(String(x).replace(/[^0-9.\-]/g, ''));
+}
+
+let hasLoaded = false;
+
+async function fetchData() {
+  try {
+    const res = await fetch(endpoint(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const row = (data.values && data.values[0]) || [];
+    let goal = toNumber(row[0]);
+    let current = toNumber(row[1]);
+    if (!isFinite(goal) || goal <= 0) goal = CONFIG.GOAL_FALLBACK;
+    if (!isFinite(current)) throw new Error('No current amount in B2');
+
+    currentGoal = goal;
+    renderLabels();
+
+    // hide any prior error state
+    fallbackEl.classList.remove('show');
+    wrapEl.classList.remove('hide');
+
+    animateTo(current, goal);
+    hasLoaded = true;
+  } catch (err) {
+    console.error('[progress-ring] fetch failed:', err);
+    if (!hasLoaded) {
+      // never got a good value — show the fallback message
+      wrapEl.classList.add('hide');
+      fallbackEl.classList.add('show');
+    }
+    // otherwise keep showing the last good value; retry on next interval
+  }
+}
+
+/* ===== Init ===== */
+renderLabels();
+renderRing(0);
+setAmount(0);
+fetchData();
+setInterval(fetchData, CONFIG.REFRESH_INTERVAL);
+</script>
+</body>
+</html>
