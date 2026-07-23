@@ -568,9 +568,12 @@ function draw() {
   const current = Math.max(0, Number(inCurrent.value) || 0);
   const goal    = Math.max(1, Number(inGoal.value) || 1);
 
-  rootStyle.setProperty('--blue', inTrack.value);
-  rootStyle.setProperty('--green', inProgress.value);
-  rootStyle.setProperty('--text', inText.value);
+  /* scope the color vars to the live canvas (NOT :root) so frozen
+     clones of other versions keep their own colors */
+  const liveCanvas = document.getElementById('canvas');
+  liveCanvas.style.setProperty('--blue', inTrack.value);
+  liveCanvas.style.setProperty('--green', inProgress.value);
+  liveCanvas.style.setProperty('--text', inText.value);
 
   renderRing(progressAngle(current));
   layoutCenter();
