@@ -37,18 +37,29 @@
   .tab.active { background: #f9f9f9; color: #111827; }
   .hidden { display: none !important; }
 
-  /* ===== Video stage ===== */
+  /* ===== Video stage: open-canvas workspace ===== */
   #stage-video {
-    flex: 1 1 auto;
-    display: flex; align-items: center; justify-content: center;
-    padding: 24px; background: #f9f9f9; border-radius: 0 8px 8px 8px;
-    margin: 0 16px 16px; overflow: auto;
+    flex: 1 1 auto; position: relative; overflow: hidden;
+    background: #eceff1; border-radius: 0 8px 8px 8px;
+    margin: 0 16px 16px; cursor: grab;
   }
-  #vcanvas {
-    width: 100%; max-width: 1100px; height: auto;
-    border: 1px solid #e5e7eb; border-radius: 4px;
+  #stage-video.panning { cursor: grabbing; }
+  #vworld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .artboard { position: absolute; }
+  .artboard canvas {
+    display: block; background: transparent;
+    box-shadow: 0 6px 30px rgba(0,0,0,.18);
+    outline: 2px solid #cbd5e1;
   }
-  #vcanvas.checker {
+  .artboard.active canvas { outline: 5px solid #7CB342; }
+  .ab-label {
+    position: absolute; bottom: 100%; left: 0; margin-bottom: 12px;
+    font-size: 14px; font-weight: 700; color: #4b5563;
+    white-space: nowrap; transform-origin: 0 100%;
+    cursor: pointer; user-select: none;
+  }
+  .artboard.active .ab-label { color: #55921f; }
+  .artboard canvas.checker {
     background-image:
       linear-gradient(45deg,#ddd 25%,transparent 25%),
       linear-gradient(-45deg,#ddd 25%,transparent 25%),
@@ -56,7 +67,21 @@
       linear-gradient(-45deg,transparent 75%,#ddd 75%);
     background-size: 24px 24px;
     background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    background-color: #fff;
   }
+  #vtoolbar {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    display: flex; gap: 6px; align-items: center;
+    background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+    padding: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  #vtoolbar button {
+    border: none; background: #eef2f5; border-radius: 6px;
+    font: inherit; font-weight: 700; font-size: 13px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  #vtoolbar button:hover { background: #e2e8ee; }
+  #vzoom-label { font-size: 12px; font-weight: 700; color: #374151; min-width: 44px; text-align: center; }
   .toggle-row { display: flex; align-items: center; gap: 8px; }
   .toggle-row input { width: auto; }
   #vprogress { font-size: 12px; color: #374151; margin-top: 8px; min-height: 16px; font-weight: 700; }
@@ -209,7 +234,14 @@
   </div>
 
   <div id="stage-video" class="hidden">
-    <canvas id="vcanvas" width="1920" height="1080"></canvas>
+    <div id="vtoolbar">
+      <button id="vz-out" type="button" title="Zoom out">&minus;</button>
+      <span id="vzoom-label">100%</span>
+      <button id="vz-in" type="button" title="Zoom in">+</button>
+      <button id="vz-fit" type="button" title="Fit all canvases">Fit</button>
+      <button id="vdup" type="button" title="Duplicate the selected canvas">&#10064; Duplicate</button>
+    </div>
+    <div id="vworld"></div>
   </div>
   </div><!-- /#left -->
 
@@ -271,6 +303,17 @@
     <div class="err image-only" id="export-err">Export failed — see console.</div>
 
     <div id="video-controls" class="hidden">
+      <div class="field">
+        <label for="in-abname">Canvas</label>
+        <input id="in-abname" type="text" value="Version 1"
+               style="width:100%;padding:8px 10px;font:inherit;font-size:14px;border:1px solid #d1d5db;border-radius:6px" />
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button type="button" class="btn btn-secondary" id="btn-abdup" style="flex:1;margin:0">Duplicate</button>
+          <button type="button" class="btn btn-secondary" id="btn-abdel" style="flex:1;margin:0;color:#b91c1c">Delete</button>
+        </div>
+        <div class="readout">Scroll to pan &middot; &#8984;/Ctrl+scroll to zoom &middot; drag empty space to pan &middot; click a canvas to select it</div>
+      </div>
+
       <div class="field">
         <label for="in-bgmode">Background</label>
         <select id="in-bgmode" style="width:100%;padding:8px 10px;font:inherit;font-size:14px;border:1px solid #d1d5db;border-radius:6px;background:#fff">
@@ -702,8 +745,8 @@ let textLayers = [];                           // {text,cx,cy,size,color,delay,p
 let textSeq = 0;
 let selection = null;                          // null | 'ring' | {text layer object}
 
-const vcanvas = document.getElementById('vcanvas');
-const vctx = vcanvas.getContext('2d');
+let vcanvas = null;   // the ACTIVE artboard's canvas (assigned on activation)
+let vctx = null;
 const inBgMode = document.getElementById('in-bgmode');
 const inBg1 = document.getElementById('in-bg1');
 const inBg2 = document.getElementById('in-bg2');
@@ -833,6 +876,7 @@ function valueAt(t, target) {
 }
 
 function drawVideoFrame(t) {
+  if (!vctx) return;
   const target = Math.max(0, Number(inCurrent.value) || 0);
   const val = valueAt(t, target);
   const angle = progressAngle(val);
@@ -954,6 +998,7 @@ function selBBox() {
 const HANDLE = 18;
 let dragGuides = { v: false, h: false };
 function drawEditor() {
+  if (!vctx) return;
   drawVideoFrame(V.TOTAL);
   const bb = selBBox();
   if (bb) {
@@ -1011,69 +1056,273 @@ function syncTextProps() {
 }
 
 let vDrag = null;   // {mode:'move'|'scale', ...}
-vcanvas.addEventListener('pointerdown', (e) => {
-  if (previewRaf) return;                       // don't edit mid-preview
-  const p = canvasPos(e);
-  const bb = selBBox();
-  if (bb && onHandle(p, bb)) {
-    const isRing = selection === 'ring';
-    const b = selBBox();
-    vDrag = {
-      mode: 'scale',
-      cx: isRing ? ringLayer.cx : selection.cx,
-      cy: isRing ? ringLayer.cy : selection.cy,
-      baseHalf: Math.max(b.w, b.h) / 2,                    // corner distance now
-      baseScale: isRing ? ringLayer.scale : selection.size // value it corresponds to
-    };
-  } else {
-    /* hit test: texts top-first, then ring */
-    let hit = null;
-    for (let i = textLayers.length - 1; i >= 0; i--) {
-      if (inBB(p, textBBox(textLayers[i]))) { hit = textLayers[i]; break; }
-    }
-    if (!hit && inBB(p, ringBBox())) hit = 'ring';
-    selection = hit;
-    syncTextProps();
-    if (hit) {
-      const c = hit === 'ring' ? ringLayer : hit;
-      vDrag = { mode: 'move', dx: c.cx - p.x, dy: c.cy - p.y };
-    }
-  }
-  vcanvas.setPointerCapture(e.pointerId);
-  drawEditor();
-});
-vcanvas.addEventListener('pointermove', (e) => {
-  if (!vDrag || previewRaf) return;
-  const p = canvasPos(e);
-  const target = selection === 'ring' ? ringLayer : selection;
-  if (!target) return;
-  if (vDrag.mode === 'move') {
-    let nx = p.x + vDrag.dx, ny = p.y + vDrag.dy;
-    dragGuides.v = Math.abs(nx - V.W / 2) <= 12;
-    dragGuides.h = Math.abs(ny - V.H / 2) <= 12;
-    if (dragGuides.v) nx = V.W / 2;
-    if (dragGuides.h) ny = V.H / 2;
-    target.cx = Math.max(0, Math.min(V.W, nx));
-    target.cy = Math.max(0, Math.min(V.H, ny));
-  } else {
-    const half = Math.max(Math.abs(p.x - vDrag.cx), Math.abs(p.y - vDrag.cy));
-    const factor = half / Math.max(20, vDrag.baseHalf);   // proportional resize from centre
-    if (selection === 'ring') {
-      ringLayer.scale = Math.max(0.25, Math.min(2.5, vDrag.baseScale * factor));
+
+/* ============================================================
+ * OPEN CANVAS — multiple artboards on a pannable/zoomable
+ * workspace. Panel controls always bind to the ACTIVE artboard.
+ * ============================================================ */
+const vworld = document.getElementById('vworld');
+const stageVideoEl = document.getElementById('stage-video');
+const inAbName = document.getElementById('in-abname');
+let artboards = [];        // {id, name, x, y, el, canvas, labelEl, state}
+let activeAb = null;
+let abSeq = 0;
+let pendingBoards = null;  // restored boards waiting to be built
+let pendingActive = 0;
+let paintedOnce = false;
+const world = { x: 60, y: 90, z: 0.35 };
+
+function applyWorld() {
+  vworld.style.transform = `translate(${world.x}px, ${world.y}px) scale(${world.z})`;
+  document.getElementById('vzoom-label').textContent = Math.round(world.z * 100) + '%';
+  const inv = `scale(${(1 / world.z).toFixed(4)})`;
+  artboards.forEach(ab => { ab.labelEl.style.transform = inv; });
+}
+
+function defaultVideoState() {
+  return {
+    bgMode: 'gradient', bg1: '#ffffff', bg2: '#D9ECFF', bg3: '#E2F5DB', bgAngle: 135,
+    popDur: 0.6, popStr: 40, fadeDur: 0.5,
+    ease: { x1: 0.33, y1: 1, x2: 0.68, y2: 1 },
+    ring: { cx: V.W / 2, cy: V.H / 2, scale: 1 },
+    texts: [],
+    track: '#2E80C2', progress: '#7CB342', textColor: '#111827', titleSize: 25
+  };
+}
+function snapshotToState(S) {
+  S.bgMode = inBgMode.value; S.bg1 = inBg1.value; S.bg2 = inBg2.value; S.bg3 = inBg3.value; S.bgAngle = inBgAngle.value;
+  S.popDur = inPopDur.value; S.popStr = inPopStr.value; S.fadeDur = inFadeDur.value;
+  S.track = inTrack.value; S.progress = inProgress.value; S.textColor = inText.value; S.titleSize = inTitleSize.value;
+  S.ease = { ...easeState };
+  S.ring = { ...ringLayer };
+  S.texts = textLayers.map(L => ({ ...L }));
+  return S;
+}
+function loadStateToUI(S) {
+  inBgMode.value = S.bgMode; inBg1.value = S.bg1; inBg2.value = S.bg2; inBg3.value = S.bg3; inBgAngle.value = S.bgAngle;
+  inPopDur.value = S.popDur; document.getElementById('out-popdur').textContent = S.popDur;
+  inPopStr.value = S.popStr; document.getElementById('out-popstr').textContent = S.popStr;
+  inFadeDur.value = S.fadeDur; document.getElementById('out-fadedur').textContent = S.fadeDur;
+  inTrack.value = S.track; inProgress.value = S.progress; inText.value = S.textColor;
+  inTitleSize.value = S.titleSize; outTitleSize.textContent = S.titleSize;
+  Object.assign(easeState, S.ease);
+  Object.assign(ringLayer, S.ring);
+  textLayers = (S.texts || []).map(L => ({ ...L }));
+  selection = null;
+  syncTextProps();
+  renderEaseEditor();
+  syncFormatLabel();       // updates bg fields, checker, and redraws
+}
+
+function attachCanvasHandlers(ab) {
+  const c = ab.canvas;
+  c.addEventListener('pointerdown', (e) => {
+    if (previewRaf) return;                     // don't edit mid-preview
+    e.stopPropagation();                        // don't start a workspace pan
+    if (ab !== activeAb) { activateArtboard(ab); return; }
+    const p = canvasPos(e);
+    const bb = selBBox();
+    if (bb && onHandle(p, bb)) {
+      const isRing = selection === 'ring';
+      vDrag = {
+        mode: 'scale',
+        cx: isRing ? ringLayer.cx : selection.cx,
+        cy: isRing ? ringLayer.cy : selection.cy,
+        baseHalf: Math.max(bb.w, bb.h) / 2,
+        baseScale: isRing ? ringLayer.scale : selection.size
+      };
     } else {
-      selection.size = Math.round(Math.max(20, Math.min(240, vDrag.baseScale * factor)));
-      if (!textProps.classList.contains('hidden')) {
-        inTSize.value = selection.size;
-        document.getElementById('out-tsize').textContent = selection.size;
+      let hit = null;
+      for (let i = textLayers.length - 1; i >= 0; i--) {
+        if (inBB(p, textBBox(textLayers[i]))) { hit = textLayers[i]; break; }
+      }
+      if (!hit && inBB(p, ringBBox())) hit = 'ring';
+      selection = hit;
+      syncTextProps();
+      if (hit) {
+        const t = hit === 'ring' ? ringLayer : hit;
+        vDrag = { mode: 'move', dx: t.cx - p.x, dy: t.cy - p.y };
       }
     }
+    c.setPointerCapture(e.pointerId);
+    drawEditor();
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!vDrag || previewRaf || ab !== activeAb) return;
+    const p = canvasPos(e);
+    const target = selection === 'ring' ? ringLayer : selection;
+    if (!target) return;
+    if (vDrag.mode === 'move') {
+      let nx = p.x + vDrag.dx, ny = p.y + vDrag.dy;
+      dragGuides.v = Math.abs(nx - V.W / 2) <= 12;
+      dragGuides.h = Math.abs(ny - V.H / 2) <= 12;
+      if (dragGuides.v) nx = V.W / 2;
+      if (dragGuides.h) ny = V.H / 2;
+      target.cx = Math.max(0, Math.min(V.W, nx));
+      target.cy = Math.max(0, Math.min(V.H, ny));
+    } else {
+      const half = Math.max(Math.abs(p.x - vDrag.cx), Math.abs(p.y - vDrag.cy));
+      const factor = half / Math.max(20, vDrag.baseHalf);
+      if (selection === 'ring') {
+        ringLayer.scale = Math.max(0.25, Math.min(2.5, vDrag.baseScale * factor));
+      } else {
+        selection.size = Math.round(Math.max(20, Math.min(240, vDrag.baseScale * factor)));
+        if (!textProps.classList.contains('hidden')) {
+          inTSize.value = selection.size;
+          document.getElementById('out-tsize').textContent = selection.size;
+        }
+      }
+    }
+    drawEditor();
+  });
+  c.addEventListener('pointerup', () => {
+    vDrag = null;
+    dragGuides.v = dragGuides.h = false;
+    drawEditor();
+  });
+}
+
+function createArtboard(state, name, x, y) {
+  const el = document.createElement('div');
+  el.className = 'artboard';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  const label = document.createElement('div');
+  label.className = 'ab-label';
+  label.textContent = name;
+  const canvas = document.createElement('canvas');
+  canvas.width = V.W; canvas.height = V.H;
+  el.appendChild(label);
+  el.appendChild(canvas);
+  vworld.appendChild(el);
+  const ab = { id: ++abSeq, name, x, y, el, canvas, labelEl: label, state };
+  label.addEventListener('pointerdown', (e) => { e.stopPropagation(); activateArtboard(ab); });
+  attachCanvasHandlers(ab);
+  artboards.push(ab);
+  applyWorld();
+  return ab;
+}
+
+function activateArtboard(ab) {
+  if (activeAb === ab) { drawEditor(); return; }
+  if (activeAb) {
+    selection = null;
+    syncTextProps();
+    drawVideoFrame(V.TOTAL);                 // repaint old board without selection chrome
+    snapshotToState(activeAb.state);
+    activeAb.el.classList.remove('active');
+    if (vcanvas) vcanvas.classList.remove('checker');
   }
-  drawEditor();
+  activeAb = ab;
+  vcanvas = ab.canvas;
+  vctx = ab.canvas.getContext('2d');
+  ab.el.classList.add('active');
+  inAbName.value = ab.name;
+  loadStateToUI(ab.state);
+}
+
+function duplicateActive() {
+  if (!activeAb) return;
+  snapshotToState(activeAb.state);
+  const S = JSON.parse(JSON.stringify(activeAb.state));
+  const x = Math.max(...artboards.map(a => a.x + V.W)) + 160;
+  const ab = createArtboard(S, `Version ${artboards.length + 1}`, x, activeAb.y);
+  activateArtboard(ab);
+  debouncedSave();
+}
+function deleteActive() {
+  if (!activeAb || artboards.length <= 1) return;
+  const idx = artboards.indexOf(activeAb);
+  activeAb.el.remove();
+  artboards.splice(idx, 1);
+  activeAb = null; vcanvas = null; vctx = null;
+  activateArtboard(artboards[Math.max(0, idx - 1)]);
+  debouncedSave();
+}
+function ensureArtboards() {
+  if (artboards.length) return;
+  if (pendingBoards && pendingBoards.length) {
+    pendingBoards.forEach(b => createArtboard(
+      Object.assign(defaultVideoState(), b.state), b.name || 'Version', b.x || 0, b.y || 0));
+    const target = artboards[Math.min(pendingActive, artboards.length - 1)];
+    artboards.forEach(ab => { if (ab !== target) activateArtboard(ab); });
+    activateArtboard(target);
+    pendingBoards = null;
+  } else {
+    const S = snapshotToState({});
+    activateArtboard(createArtboard(S, 'Version 1', 0, 0));
+  }
+  fitView();
+}
+function repaintAll() {
+  const keep = activeAb;
+  artboards.forEach(ab => { if (ab !== keep) activateArtboard(ab); });
+  if (keep) activateArtboard(keep);
+}
+
+/* ===== workspace pan / zoom ===== */
+let panDrag = null;
+stageVideoEl.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#vtoolbar')) return;
+  panDrag = { sx: e.clientX, sy: e.clientY, ox: world.x, oy: world.y };
+  stageVideoEl.classList.add('panning');
+  stageVideoEl.setPointerCapture(e.pointerId);
 });
-vcanvas.addEventListener('pointerup', () => {
-  vDrag = null;
-  dragGuides.v = dragGuides.h = false;
-  drawEditor();
+stageVideoEl.addEventListener('pointermove', (e) => {
+  if (!panDrag) return;
+  world.x = panDrag.ox + e.clientX - panDrag.sx;
+  world.y = panDrag.oy + e.clientY - panDrag.sy;
+  applyWorld();
+});
+stageVideoEl.addEventListener('pointerup', () => {
+  panDrag = null;
+  stageVideoEl.classList.remove('panning');
+});
+stageVideoEl.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const r = stageVideoEl.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const nz = Math.max(0.05, Math.min(3, world.z * Math.exp(-e.deltaY * 0.002)));
+    world.x = mx - (mx - world.x) * (nz / world.z);
+    world.y = my - (my - world.y) * (nz / world.z);
+    world.z = nz;
+  } else {
+    world.x -= e.deltaX;
+    world.y -= e.deltaY;
+  }
+  applyWorld();
+}, { passive: false });
+
+function zoomBy(f) {
+  const r = stageVideoEl.getBoundingClientRect();
+  const mx = r.width / 2, my = r.height / 2;
+  const nz = Math.max(0.05, Math.min(3, world.z * f));
+  world.x = mx - (mx - world.x) * (nz / world.z);
+  world.y = my - (my - world.y) * (nz / world.z);
+  world.z = nz;
+  applyWorld();
+}
+function fitView() {
+  if (!artboards.length) return;
+  const minX = Math.min(...artboards.map(a => a.x)), minY = Math.min(...artboards.map(a => a.y));
+  const maxX = Math.max(...artboards.map(a => a.x + V.W)), maxY = Math.max(...artboards.map(a => a.y + V.H));
+  const r = stageVideoEl.getBoundingClientRect();
+  world.z = Math.max(0.05, Math.min((r.width - 120) / (maxX - minX), (r.height - 160) / (maxY - minY), 1));
+  world.x = (r.width - (maxX - minX) * world.z) / 2 - minX * world.z;
+  world.y = (r.height - (maxY - minY) * world.z) / 2 - minY * world.z + 20;
+  applyWorld();
+}
+document.getElementById('vz-in').addEventListener('click', () => zoomBy(1.25));
+document.getElementById('vz-out').addEventListener('click', () => zoomBy(0.8));
+document.getElementById('vz-fit').addEventListener('click', fitView);
+document.getElementById('vdup').addEventListener('click', duplicateActive);
+document.getElementById('btn-abdup').addEventListener('click', duplicateActive);
+document.getElementById('btn-abdel').addEventListener('click', deleteActive);
+inAbName.addEventListener('input', () => {
+  if (!activeAb) return;
+  activeAb.name = inAbName.value;
+  activeAb.labelEl.textContent = inAbName.value;
 });
 
 /* add / delete text layers */
@@ -1119,6 +1368,7 @@ bindTextProp(inTFade, 'fadeDur', 'out-tfade');
 /* ===== Preview ===== */
 let previewRaf = null;
 btnVPreview.addEventListener('click', () => {
+  if (!activeAb) return;
   if (previewRaf) cancelAnimationFrame(previewRaf);
   const t0 = performance.now();
   const stopAt = V.LEAD + V.ANIM + 1;                    // preview holds 1s, not 10
@@ -1134,7 +1384,7 @@ btnVPreview.addEventListener('click', () => {
 /* ===== Background mode -> export format ===== */
 function syncFormatLabel() {
   const transparent = isTransparent();
-  vcanvas.classList.toggle('checker', transparent);
+  if (vcanvas) vcanvas.classList.toggle('checker', transparent);
   document.getElementById('bg-solid-field').classList.toggle('hidden', inBgMode.value !== 'solid');
   document.getElementById('bg-gradient-fields').classList.toggle('hidden', inBgMode.value !== 'gradient');
   outFormat.textContent = transparent
@@ -1285,6 +1535,7 @@ async function exportPngSequence() {
 }
 
 btnVExport.addEventListener('click', async () => {
+  if (!activeAb) return;
   vexportErr.classList.remove('show');
   btnVExport.disabled = true; btnVPreview.disabled = true;
   try {
@@ -1313,7 +1564,13 @@ function setTab(video) {
   stageImage.classList.toggle('hidden', video);
   videoControls.classList.toggle('hidden', !video);
   document.querySelectorAll('.image-only').forEach(el => el.classList.toggle('hidden', video));
-  if (video) document.fonts.load("700 30px 'Poppins'").then(drawVideoStill);
+  if (video) {
+    ensureArtboards();
+    document.fonts.load("700 30px 'Poppins'").then(() => {
+      if (!paintedOnce) { repaintAll(); paintedOnce = true; }
+      else drawEditor();
+    });
+  }
 }
 tabImage.addEventListener('click', () => setTab(false));
 tabVideo.addEventListener('click', () => setTab(true));
@@ -1487,16 +1744,18 @@ document.addEventListener('pointerdown', (e) => {
  * ============================================================ */
 const SAVE_KEY = 'jdRingEditorState_v1';
 function collectState() {
+  if (activeAb) snapshotToState(activeAb.state);
   return {
+    v: 2,
     current: inCurrent.value, goal: inGoal.value,
     track: inTrack.value, progress: inProgress.value, text: inText.value,
     titleSize: inTitleSize.value,
     box: { ...boxState },
-    bgMode: inBgMode.value, bg1: inBg1.value, bg2: inBg2.value, bg3: inBg3.value, bgAngle: inBgAngle.value,
-    popDur: inPopDur.value, popStr: inPopStr.value, fadeDur: inFadeDur.value,
-    ease: { ...easeState },
-    ring: { ...ringLayer },
-    texts: textLayers.map(L => ({ ...L })),
+    world: { ...world },
+    activeIndex: activeAb ? artboards.indexOf(activeAb) : pendingActive,
+    boards: artboards.length
+      ? artboards.map(ab => ({ name: ab.name, x: ab.x, y: ab.y, state: ab.state }))
+      : (pendingBoards || []),
     tab: stageVideo.classList.contains('hidden') ? 'image' : 'video'
   };
 }
@@ -1520,17 +1779,27 @@ function restoreState() {
     if (s.text) inText.value = s.text;
     if (s.titleSize) { inTitleSize.value = s.titleSize; outTitleSize.textContent = s.titleSize; }
     if (s.box) boxState = { ...boxState, ...s.box };
-    if (s.bgMode) inBgMode.value = s.bgMode;
-    if (s.bg1) inBg1.value = s.bg1;
-    if (s.bg2) inBg2.value = s.bg2;
-    if (s.bg3) inBg3.value = s.bg3;
-    if (s.bgAngle != null) inBgAngle.value = s.bgAngle;
-    if (s.popDur != null) { inPopDur.value = s.popDur; document.getElementById('out-popdur').textContent = s.popDur; }
-    if (s.popStr != null) { inPopStr.value = s.popStr; document.getElementById('out-popstr').textContent = s.popStr; }
-    if (s.fadeDur != null) { inFadeDur.value = s.fadeDur; document.getElementById('out-fadedur').textContent = s.fadeDur; }
-    if (s.ease) Object.assign(easeState, s.ease);
-    if (s.ring) Object.assign(ringLayer, s.ring);
-    if (Array.isArray(s.texts)) textLayers = s.texts.map(L => ({ ...L }));
+    if (s.world) Object.assign(world, s.world);
+    if (Array.isArray(s.boards) && s.boards.length) {
+      /* v2: full artboard list, built lazily when the Video tab opens */
+      pendingBoards = s.boards;
+      pendingActive = s.activeIndex || 0;
+    } else if (s.bgMode) {
+      /* v1 migration: wrap the old single-canvas video state into one artboard */
+      const base = defaultVideoState();
+      ['bgMode', 'bg1', 'bg2', 'bg3', 'bgAngle', 'popDur', 'popStr', 'fadeDur'].forEach(k => {
+        if (s[k] != null) base[k] = s[k];
+      });
+      if (s.ease) base.ease = s.ease;
+      if (s.ring) base.ring = s.ring;
+      if (Array.isArray(s.texts)) base.texts = s.texts;
+      if (s.track) base.track = s.track;
+      if (s.progress) base.progress = s.progress;
+      if (s.text) base.textColor = s.text;
+      if (s.titleSize) base.titleSize = s.titleSize;
+      pendingBoards = [{ name: 'Version 1', x: 0, y: 0, state: base }];
+      pendingActive = 0;
+    }
     return s.tab || null;
   } catch (_) { return null; }
 }
@@ -1544,7 +1813,7 @@ draw();              // render immediately with restored/fallback values
 loadFromSheet();     // then override current + goal with the live Sheets numbers
 syncFormatLabel();
 if (savedTab === 'video') setTab(true);
-document.fonts.ready.then(() => { drawVideoStill(); });
+document.fonts.ready.then(() => { if (artboards.length) { repaintAll(); paintedOnce = true; } });
 </script>
 </body>
 </html>
