@@ -26,22 +26,28 @@
     min-height: 100vh;
   }
 
-  /* ===== Left column: tabs + stages ===== */
-  #left { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; }
-  #tabs { padding: 14px 16px 0; display: flex; gap: 6px; }
-  .tab {
-    padding: 8px 20px; border: none; border-radius: 8px 8px 0 0;
-    background: #e2e6ea; color: #374151; font: inherit; font-weight: 700;
-    font-size: 13px; cursor: pointer;
+  /* ===== Left column: stages + floating view nav ===== */
+  #left { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; position: relative; }
+  #viewnav {
+    position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    z-index: 30; display: flex; gap: 4px;
+    background: #fff; border: 1px solid #d1d5db; border-radius: 999px;
+    padding: 5px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
   }
-  .tab.active { background: #f9f9f9; color: #111827; }
+  #viewnav button {
+    border: none; background: transparent; color: #374151;
+    font: inherit; font-weight: 700; font-size: 13px;
+    padding: 8px 22px; border-radius: 999px; cursor: pointer;
+  }
+  #viewnav button:hover { background: #f3f4f6; }
+  #viewnav button.active { background: #7CB342; color: #fff; }
   .hidden { display: none !important; }
 
   /* ===== Video stage: open-canvas workspace ===== */
   #stage-video {
     flex: 1 1 auto; position: relative; overflow: hidden;
-    background: #eceff1; border-radius: 0 8px 8px 8px;
-    margin: 0 16px 16px; cursor: grab;
+    background: #eceff1; border-radius: 8px;
+    margin: 16px; cursor: grab;
   }
   #stage-video.panning { cursor: grabbing; }
   #vworld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -69,36 +75,37 @@
     background-position: 0 0, 0 12px, 12px -12px, -12px 0;
     background-color: #fff;
   }
-  #vtoolbar {
+  #vtoolbar, #itoolbar {
     position: absolute; top: 12px; left: 12px; z-index: 10;
     display: flex; gap: 6px; align-items: center;
     background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
     padding: 6px; box-shadow: 0 2px 10px rgba(0,0,0,.12);
   }
-  #vtoolbar button {
+  #vtoolbar button, #itoolbar button {
     border: none; background: #eef2f5; border-radius: 6px;
     font: inherit; font-weight: 700; font-size: 13px;
     padding: 6px 10px; cursor: pointer;
   }
-  #vtoolbar button:hover { background: #e2e8ee; }
-  #vzoom-label { font-size: 12px; font-weight: 700; color: #374151; min-width: 44px; text-align: center; }
+  #vtoolbar button:hover, #itoolbar button:hover { background: #e2e8ee; }
+  #vzoom-label, #izoom-label { font-size: 12px; font-weight: 700; color: #374151; min-width: 44px; text-align: center; }
   .toggle-row { display: flex; align-items: center; gap: 8px; }
   .toggle-row input { width: auto; }
   #vprogress { font-size: 12px; color: #374151; margin-top: 8px; min-height: 16px; font-weight: 700; }
 
-  /* ===== Image canvas area ===== */
+  /* ===== Image stage: open-canvas workspace ===== */
   #stage {
-    flex: 1 1 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
-    background: #f9f9f9;
-    border-radius: 0 8px 8px 8px;
-    margin: 0 16px 16px;
-    overflow-x: auto;   /* scroll instead of shrinking the canvas */
+    flex: 1 1 auto; position: relative; overflow: hidden;
+    background: #eceff1; border-radius: 8px;
+    margin: 16px; cursor: grab;
   }
-  #canvas {
+  #stage.panning { cursor: grabbing; }
+  #iworld { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .iartboard { position: absolute; }
+  .iartboard.active #canvas { outline: 5px solid #7CB342; }
+  .iclone { outline: 2px solid #cbd5e1; }
+  .iclone > div { position: absolute; }
+  .iclone svg { width: 100%; height: 100%; display: block; }
+  #canvas, .iclone {
     position: relative;
     width: 1024px;
     height: 576px;
@@ -209,11 +216,15 @@
 <body>
 
   <div id="left">
-  <div id="tabs">
-    <button class="tab active" id="tab-image" type="button">Image</button>
-    <button class="tab" id="tab-video" type="button">Video</button>
-  </div>
   <div id="stage">
+    <div id="itoolbar">
+      <button id="iz-out" type="button" title="Zoom out">&minus;</button>
+      <span id="izoom-label">100%</span>
+      <button id="iz-in" type="button" title="Zoom in">+</button>
+      <button id="iz-fit" type="button" title="Fit all canvases">Fit</button>
+      <button id="idup" type="button" title="Duplicate the selected canvas">&#10064; Duplicate</button>
+    </div>
+    <div id="iworld">
     <div id="canvas">
       <div id="ring-box">
         <svg id="ring-svg" viewBox="-50 0 560 460" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Fundraising progress ring">
@@ -231,6 +242,7 @@
       <div class="snap-guide ui-only" id="guide-v"></div>
       <div class="snap-guide ui-only" id="guide-h"></div>
     </div>
+    </div><!-- /#iworld -->
   </div>
 
   <div id="stage-video" class="hidden">
@@ -242,6 +254,11 @@
       <button id="vdup" type="button" title="Duplicate the selected canvas">&#10064; Duplicate</button>
     </div>
     <div id="vworld"></div>
+  </div>
+
+  <div id="viewnav">
+    <button id="tab-image" class="active" type="button">Image</button>
+    <button id="tab-video" type="button">Video</button>
   </div>
   </div><!-- /#left -->
 
@@ -257,6 +274,17 @@
 
   <aside id="panel">
     <h1>Settings</h1>
+
+    <div class="field">
+      <label for="in-abname">Canvas</label>
+      <input id="in-abname" type="text" value="Version 1"
+             style="width:100%;padding:8px 10px;font:inherit;font-size:14px;border:1px solid #d1d5db;border-radius:6px" />
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button type="button" class="btn btn-secondary" id="btn-abdup" style="flex:1;margin:0">Duplicate</button>
+        <button type="button" class="btn btn-secondary" id="btn-abdel" style="flex:1;margin:0;color:#b91c1c">Delete</button>
+      </div>
+      <div class="readout">Scroll to pan &middot; &#8984;/Ctrl+scroll to zoom &middot; drag empty space to pan &middot; click a canvas to select it</div>
+    </div>
 
     <div class="field">
       <label for="in-current">Current amount</label>
@@ -303,17 +331,6 @@
     <div class="err image-only" id="export-err">Export failed — see console.</div>
 
     <div id="video-controls" class="hidden">
-      <div class="field">
-        <label for="in-abname">Canvas</label>
-        <input id="in-abname" type="text" value="Version 1"
-               style="width:100%;padding:8px 10px;font:inherit;font-size:14px;border:1px solid #d1d5db;border-radius:6px" />
-        <div style="display:flex;gap:6px;margin-top:8px">
-          <button type="button" class="btn btn-secondary" id="btn-abdup" style="flex:1;margin:0">Duplicate</button>
-          <button type="button" class="btn btn-secondary" id="btn-abdel" style="flex:1;margin:0;color:#b91c1c">Delete</button>
-        </div>
-        <div class="readout">Scroll to pan &middot; &#8984;/Ctrl+scroll to zoom &middot; drag empty space to pan &middot; click a canvas to select it</div>
-      </div>
-
       <div class="field">
         <label for="in-bgmode">Background</label>
         <select id="in-bgmode" style="width:100%;padding:8px 10px;font:inherit;font-size:14px;border:1px solid #d1d5db;border-radius:6px;background:#fff">
@@ -706,6 +723,8 @@ document.getElementById('btn-export').addEventListener('click', async () => {
   errEl.classList.remove('show');
   const canvasEl = document.getElementById('canvas');
   canvasEl.classList.add('exporting');   // hide move/resize UI in the PNG
+  const prevT = iworldEl.style.transform;
+  iworldEl.style.transform = 'none';     // capture at natural 1024x576, not workspace zoom
   try {
     const rendered = await html2canvas(canvasEl, {
       backgroundColor: '#ffffff',
@@ -725,6 +744,7 @@ document.getElementById('btn-export').addEventListener('click', async () => {
     errEl.classList.add('show');
   } finally {
     canvasEl.classList.remove('exporting');
+    iworldEl.style.transform = prevT;
   }
 });
 
@@ -1317,12 +1337,192 @@ document.getElementById('vz-in').addEventListener('click', () => zoomBy(1.25));
 document.getElementById('vz-out').addEventListener('click', () => zoomBy(0.8));
 document.getElementById('vz-fit').addEventListener('click', fitView);
 document.getElementById('vdup').addEventListener('click', duplicateActive);
-document.getElementById('btn-abdup').addEventListener('click', duplicateActive);
-document.getElementById('btn-abdel').addEventListener('click', deleteActive);
+
+/* ============================================================
+ * IMAGE OPEN CANVAS — same workspace pattern for the banner
+ * page. The live #canvas element hops between artboards;
+ * inactive boards show frozen DOM clones of their last state.
+ * ============================================================ */
+const iworldEl = document.getElementById('iworld');
+const stageImageEl = document.getElementById('stage');
+const canvasEl = document.getElementById('canvas');
+let iboards = [];
+let activeIb = null;
+let ibSeq = 0;
+let pendingIBoards = null, pendingIActive = 0, paintedImageOnce = false;
+const iworld = { x: 60, y: 90, z: 0.55 };
+const IMG_W = 1024, IMG_H = 576;
+
+function applyIWorld() {
+  iworldEl.style.transform = `translate(${iworld.x}px, ${iworld.y}px) scale(${iworld.z})`;
+  document.getElementById('izoom-label').textContent = Math.round(iworld.z * 100) + '%';
+  const inv = `scale(${(1 / iworld.z).toFixed(4)})`;
+  iboards.forEach(ab => { ab.labelEl.style.transform = inv; });
+}
+function defaultImageState() {
+  return { box: { ...DEFAULT_BOX }, track: '#2E80C2', progress: '#7CB342', textColor: '#111827', titleSize: 25 };
+}
+function snapshotImageState(S) {
+  S.box = { ...boxState };
+  S.track = inTrack.value; S.progress = inProgress.value;
+  S.textColor = inText.value; S.titleSize = inTitleSize.value;
+  return S;
+}
+function loadImageStateToUI(S) {
+  inTrack.value = S.track; inProgress.value = S.progress; inText.value = S.textColor;
+  inTitleSize.value = S.titleSize; outTitleSize.textContent = S.titleSize;
+  boxState = { ...DEFAULT_BOX, ...S.box };
+  applyBox();
+  draw();
+}
+function makeIClone() {
+  const c = canvasEl.cloneNode(true);
+  c.removeAttribute('id');
+  c.classList.remove('exporting');
+  c.classList.add('iclone');
+  c.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+  return c;
+}
+function createImageArtboard(state, name, x, y) {
+  const el = document.createElement('div');
+  el.className = 'iartboard';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  const label = document.createElement('div');
+  label.className = 'ab-label';
+  label.textContent = name;
+  el.appendChild(label);
+  iworldEl.appendChild(el);
+  const ab = { id: ++ibSeq, name, x, y, el, labelEl: label, state, cloneEl: null };
+  el.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();                        // never start a workspace pan from a board
+    if (ab !== activeIb) activateImageAb(ab);
+  });
+  iboards.push(ab);
+  applyIWorld();
+  return ab;
+}
+function activateImageAb(ab) {
+  if (activeIb === ab) return;
+  if (activeIb) {
+    snapshotImageState(activeIb.state);
+    const clone = makeIClone();                 // frozen view of the old board's state
+    activeIb.el.appendChild(clone);
+    activeIb.cloneEl = clone;
+    activeIb.el.classList.remove('active');
+  }
+  activeIb = ab;
+  if (ab.cloneEl) { ab.cloneEl.remove(); ab.cloneEl = null; }
+  ab.el.appendChild(canvasEl);
+  ab.el.classList.add('active');
+  inAbName.value = ab.name;
+  loadImageStateToUI(ab.state);
+}
+function duplicateImageActive() {
+  if (!activeIb) return;
+  snapshotImageState(activeIb.state);
+  const S = JSON.parse(JSON.stringify(activeIb.state));
+  const x = Math.max(...iboards.map(a => a.x + IMG_W)) + 120;
+  const ab = createImageArtboard(S, `Version ${iboards.length + 1}`, x, activeIb.y);
+  activateImageAb(ab);
+  debouncedSave();
+}
+function deleteImageActive() {
+  if (!activeIb || iboards.length <= 1) return;
+  const idx = iboards.indexOf(activeIb);
+  const dying = activeIb;
+  const next = iboards[idx === 0 ? 1 : idx - 1];
+  activateImageAb(next);                        // moves the live canvas out of the dying board
+  iboards.splice(iboards.indexOf(dying), 1);
+  dying.el.remove();
+  debouncedSave();
+}
+function ensureImageBoards() {
+  if (iboards.length) return;
+  if (pendingIBoards && pendingIBoards.length) {
+    pendingIBoards.forEach(b => createImageArtboard(
+      Object.assign(defaultImageState(), b.state), b.name || 'Version', b.x || 0, b.y || 0));
+    const target = iboards[Math.min(pendingIActive, iboards.length - 1)];
+    iboards.forEach(ab => { if (ab !== target) activateImageAb(ab); });
+    activateImageAb(target);
+    pendingIBoards = null;
+  } else {
+    const S = snapshotImageState({});
+    activateImageAb(createImageArtboard(S, 'Version 1', 0, 0));
+  }
+  if (fitImageView()) paintedImageOnce = true;
+}
+
+/* image workspace pan / zoom */
+let iPan = null;
+stageImageEl.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('#itoolbar')) return;
+  iPan = { sx: e.clientX, sy: e.clientY, ox: iworld.x, oy: iworld.y };
+  stageImageEl.classList.add('panning');
+  stageImageEl.setPointerCapture(e.pointerId);
+});
+stageImageEl.addEventListener('pointermove', (e) => {
+  if (!iPan) return;
+  iworld.x = iPan.ox + e.clientX - iPan.sx;
+  iworld.y = iPan.oy + e.clientY - iPan.sy;
+  applyIWorld();
+});
+stageImageEl.addEventListener('pointerup', () => {
+  iPan = null;
+  stageImageEl.classList.remove('panning');
+});
+stageImageEl.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const r = stageImageEl.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const nz = Math.max(0.05, Math.min(3, iworld.z * Math.exp(-e.deltaY * 0.002)));
+    iworld.x = mx - (mx - iworld.x) * (nz / iworld.z);
+    iworld.y = my - (my - iworld.y) * (nz / iworld.z);
+    iworld.z = nz;
+  } else {
+    iworld.x -= e.deltaX;
+    iworld.y -= e.deltaY;
+  }
+  applyIWorld();
+}, { passive: false });
+function zoomImageBy(f) {
+  const r = stageImageEl.getBoundingClientRect();
+  const mx = r.width / 2, my = r.height / 2;
+  const nz = Math.max(0.05, Math.min(3, iworld.z * f));
+  iworld.x = mx - (mx - iworld.x) * (nz / iworld.z);
+  iworld.y = my - (my - iworld.y) * (nz / iworld.z);
+  iworld.z = nz;
+  applyIWorld();
+}
+function fitImageView() {
+  if (!iboards.length) return false;
+  const r = stageImageEl.getBoundingClientRect();
+  if (r.width < 50) return false;               // stage hidden — try again when visible
+  const minX = Math.min(...iboards.map(a => a.x)), minY = Math.min(...iboards.map(a => a.y));
+  const maxX = Math.max(...iboards.map(a => a.x + IMG_W)), maxY = Math.max(...iboards.map(a => a.y + IMG_H));
+  iworld.z = Math.max(0.05, Math.min((r.width - 120) / (maxX - minX), (r.height - 160) / (maxY - minY), 1));
+  iworld.x = (r.width - (maxX - minX) * iworld.z) / 2 - minX * iworld.z;
+  iworld.y = (r.height - (maxY - minY) * iworld.z) / 2 - minY * iworld.z + 20;
+  applyIWorld();
+  return true;
+}
+document.getElementById('iz-in').addEventListener('click', () => zoomImageBy(1.25));
+document.getElementById('iz-out').addEventListener('click', () => zoomImageBy(0.8));
+document.getElementById('iz-fit').addEventListener('click', fitImageView);
+document.getElementById('idup').addEventListener('click', duplicateImageActive);
+
+/* shared Canvas controls route to whichever page is visible */
+const onVideoTab = () => !stageVideoEl.classList.contains('hidden');
+document.getElementById('btn-abdup').addEventListener('click', () =>
+  onVideoTab() ? duplicateActive() : duplicateImageActive());
+document.getElementById('btn-abdel').addEventListener('click', () =>
+  onVideoTab() ? deleteActive() : deleteImageActive());
 inAbName.addEventListener('input', () => {
-  if (!activeAb) return;
-  activeAb.name = inAbName.value;
-  activeAb.labelEl.textContent = inAbName.value;
+  const ab = onVideoTab() ? activeAb : activeIb;
+  if (!ab) return;
+  ab.name = inAbName.value;
+  ab.labelEl.textContent = inAbName.value;
 });
 
 /* add / delete text layers */
@@ -1565,11 +1765,19 @@ function setTab(video) {
   videoControls.classList.toggle('hidden', !video);
   document.querySelectorAll('.image-only').forEach(el => el.classList.toggle('hidden', video));
   if (video) {
+    /* leaving image: bank its working state; entering video: load its active board */
+    if (activeIb) snapshotImageState(activeIb.state);
+    const had = artboards.length > 0;
     ensureArtboards();
+    if (had && activeAb) { loadStateToUI(activeAb.state); inAbName.value = activeAb.name; }
     document.fonts.load("700 30px 'Poppins'").then(() => {
       if (!paintedOnce) { repaintAll(); paintedOnce = true; }
       else drawEditor();
     });
+  } else {
+    if (activeAb) snapshotToState(activeAb.state);
+    if (activeIb) { loadImageStateToUI(activeIb.state); inAbName.value = activeIb.name; }
+    if (!paintedImageOnce && fitImageView()) paintedImageOnce = true;
   }
 }
 tabImage.addEventListener('click', () => setTab(false));
@@ -1745,6 +1953,7 @@ document.addEventListener('pointerdown', (e) => {
 const SAVE_KEY = 'jdRingEditorState_v1';
 function collectState() {
   if (activeAb) snapshotToState(activeAb.state);
+  if (activeIb) snapshotImageState(activeIb.state);
   return {
     v: 2,
     current: inCurrent.value, goal: inGoal.value,
@@ -1756,6 +1965,11 @@ function collectState() {
     boards: artboards.length
       ? artboards.map(ab => ({ name: ab.name, x: ab.x, y: ab.y, state: ab.state }))
       : (pendingBoards || []),
+    iworld: { ...iworld },
+    iActiveIndex: activeIb ? iboards.indexOf(activeIb) : pendingIActive,
+    iboards: iboards.length
+      ? iboards.map(ab => ({ name: ab.name, x: ab.x, y: ab.y, state: ab.state }))
+      : (pendingIBoards || []),
     tab: stageVideo.classList.contains('hidden') ? 'image' : 'video'
   };
 }
@@ -1780,6 +1994,22 @@ function restoreState() {
     if (s.titleSize) { inTitleSize.value = s.titleSize; outTitleSize.textContent = s.titleSize; }
     if (s.box) boxState = { ...boxState, ...s.box };
     if (s.world) Object.assign(world, s.world);
+    if (s.iworld) Object.assign(iworld, s.iworld);
+    if (Array.isArray(s.iboards) && s.iboards.length) {
+      /* v3: image artboards */
+      pendingIBoards = s.iboards;
+      pendingIActive = s.iActiveIndex || 0;
+    } else {
+      /* v1/v2 migration: wrap the single image canvas into one artboard */
+      const st = defaultImageState();
+      if (s.box) st.box = { ...st.box, ...s.box };
+      if (s.track) st.track = s.track;
+      if (s.progress) st.progress = s.progress;
+      if (s.text) st.textColor = s.text;
+      if (s.titleSize) st.titleSize = s.titleSize;
+      pendingIBoards = [{ name: 'Version 1', x: 0, y: 0, state: st }];
+      pendingIActive = 0;
+    }
     if (Array.isArray(s.boards) && s.boards.length) {
       /* v2: full artboard list, built lazily when the Video tab opens */
       pendingBoards = s.boards;
@@ -1807,10 +2037,9 @@ function restoreState() {
 /* ===== Init ===== */
 renderLabels();
 const savedTab = restoreState();   // restore layout/colors/layers first
-applyBox();
 renderEaseEditor();
-draw();              // render immediately with restored/fallback values
-loadFromSheet();     // then override current + goal with the live Sheets numbers
+ensureImageBoards();               // builds image artboards; applies box + draws
+loadFromSheet();                   // then override current + goal with the live Sheets numbers
 syncFormatLabel();
 if (savedTab === 'video') setTab(true);
 document.fonts.ready.then(() => { if (artboards.length) { repaintAll(); paintedOnce = true; } });
