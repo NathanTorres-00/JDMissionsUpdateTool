@@ -438,6 +438,7 @@
       </div>
       <button class="btn btn-secondary" id="btn-vpreview">Preview animation</button>
       <button class="btn btn-primary" id="btn-vexport">Export MP4</button>
+      <button class="btn btn-secondary" id="btn-vstill">Export PNG (still)</button>
       <div id="vprogress"></div>
       <div class="err" id="vexport-err"></div>
     </div>
@@ -782,6 +783,7 @@ const vprogress = document.getElementById('vprogress');
 const vexportErr = document.getElementById('vexport-err');
 const btnVExport = document.getElementById('btn-vexport');
 const btnVPreview = document.getElementById('btn-vpreview');
+const btnVStill = document.getElementById('btn-vstill');
 
 const inPopDur = document.getElementById('in-popdur');
 const inPopStr = document.getElementById('in-popstr');
@@ -1740,7 +1742,7 @@ async function exportPngSequence() {
 btnVExport.addEventListener('click', async () => {
   if (!activeAb) return;
   vexportErr.classList.remove('show');
-  btnVExport.disabled = true; btnVPreview.disabled = true;
+  btnVExport.disabled = true; btnVPreview.disabled = true; btnVStill.disabled = true;
   try {
     await document.fonts.load("700 30px 'Poppins'");
     if (isTransparent()) await exportPngSequence();
@@ -1748,7 +1750,34 @@ btnVExport.addEventListener('click', async () => {
   } catch (err) {
     vFail('Export failed — see console.', err);
   } finally {
-    btnVExport.disabled = false; btnVPreview.disabled = false;
+    btnVExport.disabled = false; btnVPreview.disabled = false; btnVStill.disabled = false;
+    drawEditor();                              // restore editing view with selection chrome
+  }
+});
+
+/* ===== PNG still export (full 1920x1080 frame, exactly as composed) =====
+ * Honors the current background mode, so 'transparent' yields a PNG with a
+ * real alpha channel. Draws the settled final frame WITHOUT selection chrome.
+ */
+btnVStill.addEventListener('click', async () => {
+  if (!activeAb) return;
+  vexportErr.classList.remove('show');
+  if (previewRaf) { cancelAnimationFrame(previewRaf); previewRaf = null; }
+  btnVStill.disabled = true; btnVExport.disabled = true; btnVPreview.disabled = true;
+  try {
+    await document.fonts.load("700 30px 'Poppins'");
+    vprogress.textContent = 'Rendering still\u2026';
+    drawVideoFrame(V.TOTAL);                   // final frame, no selection chrome
+    const blob = await new Promise((res, rej) =>
+      vcanvas.toBlob(b => b ? res(b) : rej(new Error('toBlob failed')), 'image/png'));
+    downloadBlob(blob, 'fundraising-progress-ring-still.png');
+    vprogress.textContent = isTransparent()
+      ? `Done \u2014 ${V.W}\u00d7${V.H} PNG (transparent) downloaded.`
+      : `Done \u2014 ${V.W}\u00d7${V.H} PNG downloaded.`;
+  } catch (err) {
+    vFail('PNG still export failed \u2014 see console.', err);
+  } finally {
+    btnVStill.disabled = false; btnVExport.disabled = false; btnVPreview.disabled = false;
     drawEditor();                              // restore editing view with selection chrome
   }
 });
